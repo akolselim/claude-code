@@ -1,0 +1,65 @@
+{
+  "general": {
+    "checkpointing": {
+      "enabled": true,
+      "autoSaveInterval": 300,
+      "maxCheckpoints": 50,
+      "compressionEnabled": true
+    }
+  },
+  "context": {
+    "fileName": "GEMINI.md"
+  },
+  "mcpServers": {
+    "yargi_mcp": {
+      "command": "uvx",
+      "args": ["yargi-mcp"]
+    },
+    "mevzuat-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/saidsurucu/mevzuat-mcp",
+        "mevzuat-mcp"
+      ]
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+      "timeout": 10000,
+      "retries": 2
+    },
+    "github": {
+      "command": "node",
+      "args": [
+        "C:\\Users\\selim\\AppData\\Roaming\\npm\\node_modules\\@modelcontextprotocol\\server-github\\dist\\index.js"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      },
+      "timeout": 10000,
+      "retries": 2
+    },
+    "docker-mcp": {
+      "command": "uvx",
+      "args": ["docker-mcp"],
+      "timeout": 8000,
+      "retries": 1
+    }
+  },
+  "model": {
+    "name": "gemini-2.0-pro-exp-02-05"
+  },
+  "tools": {
+    "sandbox": false
+  },
+  "security": {
+    "auth": {
+      "selectedType": "oauth-personal"
+    }
+  },
+  "ui": {
+    "theme": "Default",
+    "hideContextSummary": false
+  }
+}
