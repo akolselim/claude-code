@@ -1,10 +1,9 @@
 import streamlit as st
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from pathlib import Path
 import time
 import os
-from typing import List, Dict
-import json
 
 # Sayfa yapılandırması
 st.set_page_config(
@@ -16,7 +15,7 @@ st.set_page_config(
 # Config'den API key'i al
 try:
     from config import GOOGLE_API_KEY
-    genai.configure(api_key=GOOGLE_API_KEY)
+    client = genai.Client(api_key=GOOGLE_API_KEY)
 except ImportError:
     st.error("❌ config.py dosyası bulunamadı! Lütfen config.py dosyasını oluşturun ve API key'inizi ekleyin.")
     st.stop()
@@ -25,8 +24,8 @@ except Exception as e:
     st.stop()
 
 # Session state başlat
-if 'corpus' not in st.session_state:
-    st.session_state.corpus = None
+if 'file_search_store' not in st.session_state:
+    st.session_state.file_search_store = None
 if 'uploaded_files' not in st.session_state:
     st.session_state.uploaded_files = []
 if 'chat_history' not in st.session_state:
@@ -44,23 +43,26 @@ st.markdown("---")
 with st.sidebar:
     st.header("📁 Dosya Yönetimi")
 
-    # Corpus oluştur butonu
-    if st.button("🆕 Yeni Corpus Oluştur"):
+    # File Search Store oluştur butonu
+    if st.button("🆕 Yeni Dosya Deposu Oluştur"):
         try:
-            corpus = genai.create_corpus(display_name="Avukat Dosyaları")
-            st.session_state.corpus = corpus
+            file_search_store = client.file_search_stores.create(
+                config={'display_name': 'Avukat Dosyaları'}
+            )
+            st.session_state.file_search_store = file_search_store
             st.session_state.uploaded_files = []
             st.session_state.chat_history = []
-            st.success(f"✅ Yeni corpus oluşturuldu: {corpus.name}")
+            st.success(f"✅ Yeni dosya deposu oluşturuldu!")
         except Exception as e:
-            st.error(f"❌ Corpus oluşturma hatası: {e}")
+            st.error(f"❌ Dosya deposu oluşturma hatası: {e}")
+            st.error("Detay: " + str(type(e).__name__))
 
-    # Corpus durumu
-    if st.session_state.corpus:
-        st.success(f"📚 Aktif Corpus: {st.session_state.corpus.name}")
+    # Store durumu
+    if st.session_state.file_search_store:
+        st.success(f"📚 Aktif Dosya Deposu Hazır")
         st.info(f"📄 Yüklenen dosya sayısı: {len(st.session_state.uploaded_files)}")
     else:
-        st.warning("⚠️ Önce bir corpus oluşturun")
+        st.warning("⚠️ Önce bir dosya deposu oluşturun")
 
     st.markdown("---")
 
@@ -73,7 +75,7 @@ with st.sidebar:
         key="file_uploader"
     )
 
-    if uploaded_files and st.session_state.corpus:
+    if uploaded_files and st.session_state.file_search_store:
         if st.button("⬆️ Dosyaları İşle ve Yükle"):
             progress_bar = st.progress(0)
             status_text = st.empty()
@@ -87,17 +89,23 @@ with st.sidebar:
 
                     status_text.text(f"İşleniyor: {uploaded_file.name}")
 
-                    # Dosyayı corpus'a yükle
-                    document = genai.upload_file(path=str(temp_file_path))
-
-                    # Corpus'a ekle
-                    genai.create_document(
-                        corpus_name=st.session_state.corpus.name,
-                        display_name=uploaded_file.name,
-                        document=document
+                    # Dosyayı file search store'a yükle
+                    operation = client.file_search_stores.upload_to_file_search_store(
+                        file=str(temp_file_path),
+                        file_search_store_name=st.session_state.file_search_store.name
                     )
 
-                    st.session_state.uploaded_files.append(uploaded_file.name)
+                    # Yükleme tamamlanana kadar bekle
+                    wait_count = 0
+                    while not operation.done and wait_count < 60:  # Max 5 dakika
+                        time.sleep(5)
+                        operation = client.operations.get(operation.name)
+                        wait_count += 1
+
+                    if operation.done:
+                        st.session_state.uploaded_files.append(uploaded_file.name)
+                    else:
+                        st.warning(f"⚠️ {uploaded_file.name} yükleme zaman aşımı")
 
                     # Geçici dosyayı sil
                     temp_file_path.unlink()
@@ -138,14 +146,12 @@ for message in st.session_state.chat_history:
         if "sources" in message and message["sources"]:
             with st.expander("📎 Kaynaklar"):
                 for source in message["sources"]:
-                    st.markdown(f"- **{source['file']}** (Sayfa {source['page']})")
-                    if 'text' in source:
-                        st.markdown(f"  > _{source['text'][:200]}..._")
+                    st.markdown(f"- {source}")
 
 # Soru input
 if prompt := st.chat_input("Dosyalarınız hakkında soru sorun..."):
-    if not st.session_state.corpus:
-        st.error("❌ Lütfen önce bir corpus oluşturun!")
+    if not st.session_state.file_search_store:
+        st.error("❌ Lütfen önce bir dosya deposu oluşturun!")
     elif not st.session_state.uploaded_files:
         st.error("❌ Lütfen önce dosya yükleyin!")
     else:
@@ -158,44 +164,35 @@ if prompt := st.chat_input("Dosyalarınız hakkında soru sorun..."):
         with st.chat_message("assistant"):
             with st.spinner("Düşünüyorum..."):
                 try:
-                    # Model oluştur
-                    model = genai.GenerativeModel(
-                        model_name="gemini-2.0-flash-exp",
-                        tools=[
-                            genai.protos.Tool(
-                                retrieval=genai.protos.Retrieval(
-                                    retrieval_type=genai.protos.Retrieval.RetrievalType.SEMANTIC_SIMILARITY,
-                                    corpus_name=st.session_state.corpus.name,
-                                )
-                            )
-                        ]
-                    )
-
-                    # Yanıt al
-                    response = model.generate_content(
-                        f"""Sen bir avukat asistanısın. Yüklenen dosyalara dayanarak soruları yanıtla.
+                    # File search tool ile yanıt al
+                    response = client.models.generate_content(
+                        model="gemini-2.0-flash-exp",
+                        contents=f"""Sen bir avukat asistanısın. Yüklenen dosyalara dayanarak soruları yanıtla.
 
 Soru: {prompt}
 
 Lütfen:
 1. Yanıtını dokümanlardan aldığın bilgilere dayandır
 2. Eğer dokümanlarda ilgili bilgi yoksa "Bu bilgi yüklenen dosyalarda mevcut değil" de
-3. Yanıtında hangi dosyadan alıntı yaptığını belirt
-4. Türkçe ve profesyonel bir dil kullan"""
+3. Türkçe ve profesyonel bir dil kullan
+4. Mümkünse hangi dosyadan alıntı yaptığını belirt""",
+                        config=types.GenerateContentConfig(
+                            tools=[types.Tool(
+                                file_search=types.FileSearchTool(
+                                    file_search_store_names=[st.session_state.file_search_store.name]
+                                )
+                            )]
+                        )
                     )
 
                     answer = response.text
 
                     # Kaynakları çıkar (eğer varsa)
                     sources = []
-                    if hasattr(response, 'grounding_metadata'):
+                    if hasattr(response, 'grounding_metadata') and response.grounding_metadata:
                         for chunk in response.grounding_metadata.grounding_chunks:
-                            if hasattr(chunk, 'web') and chunk.web:
-                                sources.append({
-                                    'file': chunk.web.title or 'Unknown',
-                                    'page': 'N/A',
-                                    'text': chunk.text[:200] if hasattr(chunk, 'text') else ''
-                                })
+                            if hasattr(chunk, 'retrieved_context'):
+                                sources.append(chunk.retrieved_context.title or "Bilinmeyen kaynak")
 
                     # Yanıtı göster
                     st.markdown(answer)
@@ -203,21 +200,21 @@ Lütfen:
                     # Kaynakları göster
                     if sources:
                         with st.expander("📎 Kaynaklar"):
-                            for source in sources:
-                                st.markdown(f"- **{source['file']}** (Sayfa {source['page']})")
-                                if 'text' in source and source['text']:
-                                    st.markdown(f"  > _{source['text']}..._")
+                            for source in set(sources):  # Tekrarları kaldır
+                                st.markdown(f"- {source}")
 
                     # Chat history'ye ekle
                     st.session_state.chat_history.append({
                         "role": "assistant",
                         "content": answer,
-                        "sources": sources
+                        "sources": list(set(sources))
                     })
 
                 except Exception as e:
                     st.error(f"❌ Yanıt alınırken hata: {e}")
                     st.error("Detay: " + str(type(e).__name__))
+                    import traceback
+                    st.error(traceback.format_exc())
 
 # Footer
 st.markdown("---")
