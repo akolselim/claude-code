@@ -1,0 +1,38 @@
+# API Keys ve Gizli Bilgiler (GÜVENLİK ÖNEMLİ!)
+config.py
+*.key
+*.secret
+
+# Geçici dosyalar
+temp_uploads/
+*.tmp
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# IDE ayarları
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Sistem dosyaları
+.DS_Store
+Thumbs.db
+
+# Loglar
+*.log
+
+# Yüklenen dosyalar (opsiyonel - yoruma alabilirsiniz)
+uploads/
+documents/
