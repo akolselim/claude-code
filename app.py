@@ -92,7 +92,7 @@ with st.sidebar:
                     # Dosyayı file search store'a yükle
                     operation = client.file_search_stores.upload_to_file_search_store(
                         file=str(temp_file_path),
-                        file_search_store_name=st.session_state.file_search_store.name
+                        file_search_store_name=st.session_state.file_search_store
                     )
 
                     # Yükleme tamamlanana kadar bekle
@@ -179,7 +179,7 @@ Lütfen:
                         config=types.GenerateContentConfig(
                             tools=[types.Tool(
                                 file_search=types.FileSearchTool(
-                                    file_search_store_names=[st.session_state.file_search_store.name]
+                                    file_search_store_names=[st.session_state.file_search_store]
                                 )
                             )]
                         )
